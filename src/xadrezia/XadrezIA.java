@@ -2,7 +2,11 @@ package xadrezia;
 
 import xadrezia.MotorIALuiz.MotorIALuiz;
 import java.awt.Point;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
 
 public class XadrezIA {
@@ -53,6 +57,7 @@ public class XadrezIA {
             // Inicia o jogo
             int jogada = 0; // ID da jogada
             Movimento proximaJogada; // Próxima jogada
+            List<String> sanMoves = new ArrayList<>();
             tabuleiro.imprimir(); // Imprime posição inicial do tabuleiro
             System.out.println("\n---\n");
 
@@ -68,13 +73,44 @@ public class XadrezIA {
                     proximaJogada = motorPreta.getProximaJogada();
                 }
 
+                String san = PgnUtil.toSAN(tabuleiro, proximaJogada);
                 tabuleiro.doMovimento(proximaJogada);
                 tabuleiro.imprimir();
                 System.out.println("\n---\n");
+
+                sanMoves.add(san);
             }
+
+            this.gerarPgn(sanMoves);
         }
         System.out.println("pretas ganharam " + pretas + " vezes \nbrancas ganharam " + brancas + " vezes \ne empataram " + empate + "vezes");
         System.out.println("--- FIM DE JOGO ---");
+    }
+
+    /**
+     * Monta o PGN da partida recém-finalizada e grava em partida.pgn
+     *
+     * @param sanMoves lances da partida em notação SAN, em ordem
+     */
+    private static void gerarPgn(List<String> sanMoves) {
+        String resultado;
+        if (brancas > 0) {
+            resultado = "1-0";
+        } else if (pretas > 0) {
+            resultado = "0-1";
+        } else {
+            resultado = "1/2-1/2";
+        }
+
+        String pgn = PgnUtil.montarPgn(sanMoves, resultado, "MotorIAIdiota", "MotorIALuiz");
+
+        try (PrintWriter pw = new PrintWriter(new FileWriter("partida.pgn"))) {
+            pw.print(pgn);
+        } catch (IOException e) {
+            System.err.println("Falha ao gravar partida.pgn: " + e.getMessage());
+        }
+
+        System.out.println(pgn);
     }
 
 }
