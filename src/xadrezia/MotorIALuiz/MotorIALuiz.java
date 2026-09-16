@@ -152,7 +152,10 @@ public class MotorIALuiz extends MotorIA {
         }
         if ((primeiraJogada == 79)
                 && ((getTabuleiro().getPeca(6, 6) == null) || (getTabuleiro().getPeca(6, 5) == null))) {
-            return new Movimento("e7", "e6");
+            Movimento m = new Movimento("e7", "e6");
+            if (getTabuleiro().isMovimentoPossivel(m)) {
+                return m;
+            }
         }
 
         boolean condicao0 = false;
@@ -177,7 +180,10 @@ public class MotorIALuiz extends MotorIA {
         }
 
         if ((condicao0) && (condicao1 || condicao2)) {
-            return new Movimento("d8", "h4");
+            Movimento m = new Movimento("d8", "h4");
+            if (getTabuleiro().isMovimentoPossivel(m)) {
+                return m;
+            }
         }
         return null;
     }
