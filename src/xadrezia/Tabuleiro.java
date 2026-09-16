@@ -2,9 +2,12 @@ package xadrezia;
 
 import java.awt.Point;
 import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import static xadrezia.Tabuleiro.SITUACAO_EMPATE.Maximo_Jogadas;
 
@@ -14,6 +17,8 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
   private Movimento movimentoAnterior; // Usado para En Passant
   private Peca.COR turno;// Usado para turnos
   private int numeroJogadas;
+  private List<String> historicoPosicoes;
+  private int lancesSemCapturaOuPeao; // Usado para detecção de empate pela regra dos 50 lances
 
   /**
    * Cria um tabuleiro vazio
@@ -26,7 +31,7 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
    * @param vazio true se não devem ser colocadas peças
    */
   private Tabuleiro(boolean vazio) {
-    this(new Peca[8][8], Peca.COR.BRANCA, 0);
+    this(new Peca[8][8], Peca.COR.BRANCA, 0, new ArrayList<String>(), 0);
 
     if (vazio) {
       for (int i = 0; i < 8; i++) {
@@ -74,10 +79,13 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
    *
    * @param tabuleiro
    */
-  private Tabuleiro(Peca[][] tabuleiro, Peca.COR turno, int numeroJogadas) {
+  private Tabuleiro(Peca[][] tabuleiro, Peca.COR turno, int numeroJogadas, List<String> historicoPosicoes,
+          int lancesSemCapturaOuPeao) {
     this.tabuleiro = tabuleiro;
     this.turno = turno;
     this.numeroJogadas = numeroJogadas;
+    this.historicoPosicoes = historicoPosicoes;
+    this.lancesSemCapturaOuPeao = lancesSemCapturaOuPeao;
   }
 
   /**
@@ -92,7 +100,8 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
         tabuleiroClone[i][j] = tabuleiro[i][j] == null ? null : tabuleiro[i][j].clone();
       }
     }
-    return new Tabuleiro(tabuleiroClone, turno, numeroJogadas);
+    return new Tabuleiro(tabuleiroClone, turno, numeroJogadas, new ArrayList<>(historicoPosicoes),
+            lancesSemCapturaOuPeao);
   }
 
   /**
@@ -149,7 +158,26 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
    * @param movimento
    */
   public void doMovimento(Movimento movimento) {
+    Peca pecaMovida = getPeca(movimento.getOrigem());
+    boolean captura = getPeca(movimento.getDestino()) != null;
+    boolean movimentoDePeao = pecaMovida.getTipo() == Peca.TIPO.PEAO;
+
     doMovimento(movimento, true);
+
+    if (captura || movimentoDePeao) {
+      lancesSemCapturaOuPeao = 0;
+    } else {
+      lancesSemCapturaOuPeao++;
+    }
+
+    historicoPosicoes.add(assinaturaPosicaoAtual());
+  }
+
+  /**
+   * @return assinatura da posição atual (peças + turno), usada para detectar repetição de jogadas
+   */
+  private String assinaturaPosicaoAtual() {
+    return this.toString() + turno;
   }
 
   /**
@@ -587,7 +615,8 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
    */
   public enum SITUACAO_EMPATE {
 
-    Mate_Perpetuo, Rei_vs_Rei, Rei_vs_Rei_Bispo_ou_Cavalo, Rei_Bispo_vs_Rei_Bispo, Maximo_Jogadas
+    Mate_Perpetuo, Rei_vs_Rei, Rei_vs_Rei_Bispo_ou_Cavalo, Rei_Bispo_vs_Rei_Bispo, Repeticao_Tripla,
+    Cinquenta_Lances, Maximo_Jogadas
   };
 
   /**
@@ -604,6 +633,10 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
     /**
      * Repetição tripla de jogada
      */
+    if (Collections.frequency(historicoPosicoes, assinaturaPosicaoAtual()) >= 3) {
+      return SITUACAO_EMPATE.Repeticao_Tripla;
+    }
+
     /**
      * Impossibilidade de Mate
      *
@@ -642,14 +675,12 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
     }
 
     /**
-     * Regra dos 3 movimentos repetidos
+     * Regra dos 50 movimentos (em 50 jogadas de cada jogador, ou seja, 100 lances, o peão de um dos lados deve ser
+     * movimentado pelo menos uma vez ou uma captura deve ter sido feita)
      */
-    // TODO
-    /**
-     * Regra dos 50 movimentos (em 50 jogadas o peão de um dos lados deve ser movimentado pelo menos uma vez ou uma
-     * captura deve ter sido feita)
-     */
-    // TODO
+    if (lancesSemCapturaOuPeao >= 100) {
+      return SITUACAO_EMPATE.Cinquenta_Lances;
+    }
     /**
      * Segundo o chess-poster.com o número máximo de jogadas possíveis em um jogo é 5.950. Se atingimos este limite,
      * consideraremos um empate
