@@ -1,6 +1,9 @@
 package xadrezia;
 
 import java.awt.Point;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -19,6 +22,7 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
   private int numeroJogadas;
   private List<String> historicoPosicoes;
   private int lancesSemCapturaOuPeao; // Usado para detecção de empate pela regra dos 50 lances
+  private List<Movimento> historicoLances; // Usado para geração do PGN da partida
 
   /**
    * Cria um tabuleiro vazio
@@ -31,7 +35,7 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
    * @param vazio true se não devem ser colocadas peças
    */
   private Tabuleiro(boolean vazio) {
-    this(new Peca[8][8], Peca.COR.BRANCA, 0, new ArrayList<String>(), 0);
+    this(new Peca[8][8], Peca.COR.BRANCA, 0, new ArrayList<String>(), 0, new ArrayList<Movimento>());
 
     if (vazio) {
       for (int i = 0; i < 8; i++) {
@@ -80,12 +84,13 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
    * @param tabuleiro
    */
   private Tabuleiro(Peca[][] tabuleiro, Peca.COR turno, int numeroJogadas, List<String> historicoPosicoes,
-          int lancesSemCapturaOuPeao) {
+          int lancesSemCapturaOuPeao, List<Movimento> historicoLances) {
     this.tabuleiro = tabuleiro;
     this.turno = turno;
     this.numeroJogadas = numeroJogadas;
     this.historicoPosicoes = historicoPosicoes;
     this.lancesSemCapturaOuPeao = lancesSemCapturaOuPeao;
+    this.historicoLances = historicoLances;
   }
 
   /**
@@ -101,7 +106,7 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
       }
     }
     return new Tabuleiro(tabuleiroClone, turno, numeroJogadas, new ArrayList<>(historicoPosicoes),
-            lancesSemCapturaOuPeao);
+            lancesSemCapturaOuPeao, new ArrayList<>(historicoLances));
   }
 
   /**
@@ -171,6 +176,7 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
     }
 
     historicoPosicoes.add(assinaturaPosicaoAtual());
+    historicoLances.add(movimento);
   }
 
   /**
@@ -178,6 +184,52 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
    */
   private String assinaturaPosicaoAtual() {
     return this.toString() + turno;
+  }
+
+  /**
+   * Monta o PGN da partida a partir do histórico de lances já realizados neste tabuleiro, recriando cada posição
+   * para gerar a notação SAN de cada lance. O resultado ("1-0", "0-1" ou "1/2-1/2") é determinado a partir do
+   * estado atual do próprio tabuleiro.
+   *
+   * @param brancas nome/identificação do jogador/motor das brancas
+   * @param pretas nome/identificação do jogador/motor das pretas
+   * @return texto completo do PGN, incluindo cabeçalho
+   */
+  public String gerarPgn(String brancas, String pretas) {
+    String resultado;
+    if (isXequeMate(Peca.COR.BRANCA)) {
+      resultado = "0-1";
+    } else if (isXequeMate(Peca.COR.PRETA)) {
+      resultado = "1-0";
+    } else {
+      resultado = "1/2-1/2";
+    }
+
+    List<String> sanLances = new ArrayList<>();
+    Tabuleiro replay = new Tabuleiro();
+    for (final Movimento movimento : historicoLances) {
+      sanLances.add(PgnUtil.toSAN(replay, movimento));
+      replay.doMovimento(movimento);
+    }
+    return PgnUtil.montarPgn(sanLances, resultado, brancas, pretas);
+  }
+
+  /**
+   * Gera o PGN da partida (ver {@link #gerarPgn(String, String)}) e grava no arquivo informado.
+   *
+   * @param caminhoArquivo caminho do arquivo onde o PGN será gravado
+   * @param brancas nome/identificação do jogador/motor das brancas
+   * @param pretas nome/identificação do jogador/motor das pretas
+   * @return texto completo do PGN gerado
+   */
+  public String salvarPgn(String caminhoArquivo, String brancas, String pretas) {
+    String pgn = gerarPgn(brancas, pretas);
+    try (PrintWriter pw = new PrintWriter(new FileWriter(caminhoArquivo))) {
+      pw.print(pgn);
+    } catch (IOException e) {
+      System.err.println("Falha ao gravar " + caminhoArquivo + ": " + e.getMessage());
+    }
+    return pgn;
   }
 
   /**
