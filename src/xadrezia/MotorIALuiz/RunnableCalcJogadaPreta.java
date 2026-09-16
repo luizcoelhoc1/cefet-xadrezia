@@ -81,13 +81,13 @@ public class RunnableCalcJogadaPreta implements Runnable, Comparable<RunnableCal
         int valorPreta = 0;
         for (int i = 0; i < 8; i++) {
             for (int j = 0; j < 8; j++) {
-                if (tabuleiro.getPeca(j, j) == null) {
+                if (tabuleiro.getPeca(i, j) == null) {
                     continue;
                 }
-                if (tabuleiro.getPeca(j, j).getCor() == BRANCA) {
-                    valorBranca += tabuleiro.getPeca(j, j).getValor();
+                if (tabuleiro.getPeca(i, j).getCor() == BRANCA) {
+                    valorBranca += tabuleiro.getPeca(i, j).getValor();
                 } else { //se for preta
-                    valorPreta += tabuleiro.getPeca(j, j).getValor();
+                    valorPreta += tabuleiro.getPeca(i, j).getValor();
                 }
             }
         }
