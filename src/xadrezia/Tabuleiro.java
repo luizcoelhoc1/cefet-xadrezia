@@ -718,6 +718,11 @@ public class Tabuleiro implements Cloneable, Iterable<Movimento> {
   private boolean isMovimentoPossivel(Movimento movimento, boolean checarXeque, boolean verificarCor) {
     Peca peca = getPeca(movimento.getOrigem());
 
+    // Não há peça na origem, movimento impossível
+    if (peca == null) {
+      return false;
+    }
+
     if (verificarCor) {
       if (peca.getCor() != turno) {
         // Não é o turno da peça em questão
