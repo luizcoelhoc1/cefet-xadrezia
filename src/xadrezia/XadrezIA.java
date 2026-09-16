@@ -81,7 +81,7 @@ public class XadrezIA {
                 sanMoves.add(san);
             }
 
-            this.gerarPgn(sanMoves);
+            gerarPgn(sanMoves);
         }
         System.out.println("pretas ganharam " + pretas + " vezes \nbrancas ganharam " + brancas + " vezes \ne empataram " + empate + "vezes");
         System.out.println("--- FIM DE JOGO ---");
