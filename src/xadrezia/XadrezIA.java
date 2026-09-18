@@ -47,7 +47,8 @@ public class XadrezIA {
 
             // Cria os motores
             MotorIA motorBranca = new MotorIAIdiota(tabuleiro, Peca.COR.BRANCA);
-            MotorIA motorPreta = new MotorIALuiz(tabuleiro, Peca.COR.PRETA);
+            // O Luiz aprofunda a busca até completar este orçamento por jogada.
+            MotorIA motorPreta = new MotorIALuiz(tabuleiro, Peca.COR.PRETA, 10_000L);
 
             // Inicia o jogo
             int jogada = 0; // ID da jogada

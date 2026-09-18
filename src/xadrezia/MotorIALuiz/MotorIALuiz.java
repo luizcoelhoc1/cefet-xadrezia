@@ -1,190 +1,152 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
 package xadrezia.MotorIALuiz;
 
-import java.awt.Point;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.List;
 import xadrezia.MotorIA;
 import xadrezia.Movimento;
 import xadrezia.Peca;
-import static xadrezia.Peca.COR.*;
-import static xadrezia.Peca.TIPO.*;
 import xadrezia.Tabuleiro;
 
 /**
+ * Motor que aprofunda a busca enquanto houver tempo disponível.
  *
- * @author Luiz
+ * <p>Ao contrário da implementação anterior, a profundidade não é limitada a
+ * três lances. A busca é feita em iterações completas de profundidade crescente
+ * e somente o resultado da última iteração terminada é usado.</p>
  */
 public class MotorIALuiz extends MotorIA {
 
-    private boolean mateDoLouco;
+    /** Tempo usado pelo construtor legado. */
+    public static final long TEMPO_PADRAO_MILLIS = 10_000L;
+    private static final int VALOR_MATE = 1_000_000;
+
+    private final long tempoPorJogadaNanos;
+    private long limiteBuscaNanos;
 
     public MotorIALuiz(Tabuleiro tabuleiro, Peca.COR cor) {
+        this(tabuleiro, cor, TEMPO_PADRAO_MILLIS);
+    }
+
+    /**
+     * @param tempoPorJogadaMillis orçamento máximo, em milissegundos, para uma jogada
+     */
+    public MotorIALuiz(Tabuleiro tabuleiro, Peca.COR cor, long tempoPorJogadaMillis) {
         super(tabuleiro, cor);
-        mateDoLouco = true;
+        if (tempoPorJogadaMillis <= 0) {
+            throw new IllegalArgumentException("O tempo por jogada deve ser maior que zero.");
+        }
+        this.tempoPorJogadaNanos = tempoPorJogadaMillis * 1_000_000L;
     }
 
     @Override
     public Movimento getProximaJogada() {
-        Long l = System.currentTimeMillis();
-        Movimento m;
-        if (getCor() == PRETA) {
-            m = movPreta();
-        } else {
-            m = movBranca();
+        List<Movimento> movimentos = movimentosPossiveis(getTabuleiro());
+        if (movimentos.isEmpty()) {
+            return null;
         }
-        System.err.println((System.currentTimeMillis() - l) + "ms");
-        return m;
-    }
 
-    private Movimento movBranca() {
+        Movimento melhorMovimento = movimentos.get(0);
+        limiteBuscaNanos = System.nanoTime() + tempoPorJogadaNanos;
 
-        ArrayList<RunnableCalcJogadaBranca> alRunnable = new ArrayList<>();
-        for (final Movimento m : getTabuleiro()) {
-            alRunnable.add(new RunnableCalcJogadaBranca(m, getTabuleiro()));
-        }
-        ArrayList<Thread> alThread = new ArrayList<>();
-        int i = 0;
-        for (final RunnableCalcJogadaBranca x : alRunnable) {
-            alThread.add(new Thread(x));
-            alThread.get(i).start();
-            i++;
-        }
-        Collections.sort(alRunnable);
-        for (final Thread t : alThread) {
+        // Cada iteração é independente: uma expirada nunca substitui a melhor
+        // jogada encontrada pela última profundidade inteiramente analisada.
+        for (int profundidade = 1; ; profundidade++) {
             try {
-                t.join();
-            } catch (InterruptedException ex) {
-                Logger.getLogger(MotorIALuiz.class.getName()).log(Level.SEVERE, null, ex);
+                Movimento candidato = melhorMovimentoNaProfundidade(movimentos, profundidade);
+                melhorMovimento = candidato;
+            } catch (TempoEsgotadoException ex) {
+                break;
             }
         }
-        Collections.sort(alRunnable);
-
-
-        return alRunnable.get(0).getMovimento();
+        return melhorMovimento;
     }
 
-    private Movimento movPreta() {
+    private Movimento melhorMovimentoNaProfundidade(List<Movimento> movimentos, int profundidade) {
+        Movimento melhorMovimento = null;
+        int melhorValor = Integer.MIN_VALUE;
+        int alpha = Integer.MIN_VALUE + 1;
+        int beta = Integer.MAX_VALUE;
 
-        if (mateDoLouco) {
-            Movimento m = mateDoLouco();
-            if (m == null) {
-                mateDoLouco = false;
+        for (Movimento movimento : movimentos) {
+            verificarTempo();
+            Tabuleiro proximo = getTabuleiro().clone();
+            proximo.doMovimento(movimento);
+            int valor = minimax(proximo, profundidade - 1, alpha, beta);
+            if (melhorMovimento == null || valor > melhorValor) {
+                melhorValor = valor;
+                melhorMovimento = movimento;
+            }
+            alpha = Math.max(alpha, melhorValor);
+        }
+        return melhorMovimento;
+    }
+
+    private int minimax(Tabuleiro tabuleiro, int profundidade, int alpha, int beta) {
+        verificarTempo();
+        if (profundidade == 0) {
+            if (tabuleiro.isXequeMate(tabuleiro.getTurno())) {
+                return tabuleiro.getTurno() == getCor() ? -VALOR_MATE : VALOR_MATE;
+            }
+            return avaliar(tabuleiro);
+        }
+
+        List<Movimento> movimentos = movimentosPossiveis(tabuleiro);
+        if (movimentos.isEmpty()) {
+            if (tabuleiro.isXequeMate(tabuleiro.getTurno())) {
+                return tabuleiro.getTurno() == getCor()
+                        ? -VALOR_MATE - profundidade : VALOR_MATE + profundidade;
+            }
+            return 0;
+        }
+
+        boolean maximizando = tabuleiro.getTurno() == getCor();
+        int melhorValor = maximizando ? Integer.MIN_VALUE + 1 : Integer.MAX_VALUE;
+        for (Movimento movimento : movimentos) {
+            Tabuleiro proximo = tabuleiro.clone();
+            proximo.doMovimento(movimento);
+            int valor = minimax(proximo, profundidade - 1, alpha, beta);
+            if (maximizando) {
+                melhorValor = Math.max(melhorValor, valor);
+                alpha = Math.max(alpha, melhorValor);
             } else {
-                return m;
+                melhorValor = Math.min(melhorValor, valor);
+                beta = Math.min(beta, melhorValor);
+            }
+            if (beta <= alpha) {
+                break;
             }
         }
-
-        ArrayList<RunnableCalcJogadaPreta> alRunnable = new ArrayList<>();
-        for (final Movimento m : getTabuleiro()) {
-            if (getTabuleiro().getPeca(m.getOrigem()).getCor() == PRETA) {
-                alRunnable.add(new RunnableCalcJogadaPreta(m, getTabuleiro()));
-            }
-        }
-        ArrayList<Thread> alThread = new ArrayList<>();
-        int i = 0;
-        for (final RunnableCalcJogadaPreta x : alRunnable) {
-            alThread.add(new Thread(x));
-            alThread.get(i).start();
-            i++;
-        }
-        /*try {
-         Thread.sleep(9500);
-         } catch (InterruptedException ex) {
-         Logger.getLogger(MotorIALuiz.class.getName()).log(Level.SEVERE, null, ex);
-         }*/
-        for (final Thread t : alThread) {
-            try {
-                t.join();
-            } catch (InterruptedException ex) {
-                Logger.getLogger(MotorIALuiz.class.getName()).log(Level.SEVERE, null, ex);
-            }
-        }
-        Collections.sort(alRunnable);
-
-        return alRunnable.get(0).getMovimento();
+        return melhorValor;
     }
 
-    private ArrayList<Movimento> movimentosPossiveis(Tabuleiro tabuleiro, Peca.COR cor) {
-        ArrayList<Movimento> movimentosPossiveis = new ArrayList<>();
-        for (int i = 0; i < 7; i++) {
-            for (int j = 0; j < 7; j++) {
-                if (tabuleiro.getPeca(i, j) == null) {
-                    continue;
-                }
-                if ((cor == PRETA) && (tabuleiro.getPeca(i, j).getCor() != PRETA)) {
-                    continue;
-                }
-                if ((cor == BRANCA) && (tabuleiro.getPeca(i, j).getCor() != BRANCA)) {
-                    continue;
-                }
-
-                for (int k = 0; k < 7; k++) {
-                    for (int l = 0; l < 7; l++) {
-                        if (k == i & l == j) {
-                            continue;
-                        }
-                        Movimento m = new Movimento(new Point(i, j), new Point(k, l));
-                        if (tabuleiro.isMovimentoPossivel(m)) {
-                            movimentosPossiveis.add(m);
-                        }
-                    }
-                }
-            }
+    private List<Movimento> movimentosPossiveis(Tabuleiro tabuleiro) {
+        List<Movimento> movimentos = new ArrayList<>();
+        for (Movimento movimento : tabuleiro) {
+            movimentos.add(movimento);
         }
-        return movimentosPossiveis;
+        return movimentos;
     }
 
-    private Movimento mateDoLouco() {
-        int primeiraJogada = 0;
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 2; j++) {
-                if (getTabuleiro().getPeca(i, j) != null) {
-                    primeiraJogada += getTabuleiro().getPeca(i, j).getValor();
+    private int avaliar(Tabuleiro tabuleiro) {
+        int valor = 0;
+        for (int x = 0; x < 8; x++) {
+            for (int y = 0; y < 8; y++) {
+                Peca peca = tabuleiro.getPeca(x, y);
+                if (peca != null) {
+                    valor += peca.getCor() == getCor() ? peca.getValor() : -peca.getValor();
                 }
             }
         }
-        if ((primeiraJogada == 79)
-                && ((getTabuleiro().getPeca(6, 6) == null) || (getTabuleiro().getPeca(6, 5) == null))) {
-            Movimento m = new Movimento("e7", "e6");
-            if (getTabuleiro().isMovimentoPossivel(m)) {
-                return m;
-            }
-        }
+        return valor;
+    }
 
-        boolean condicao0 = false;
-        if (getTabuleiro().getPeca(4, 6) != null) {
-            if (getTabuleiro().getPeca(4, 6).getTipo() == PEAO) {
-                condicao0 = true;
-            }
+    private void verificarTempo() {
+        if (System.nanoTime() >= limiteBuscaNanos) {
+            throw new TempoEsgotadoException();
         }
+    }
 
-        boolean condicao1 = false;
-        if (getTabuleiro().getPeca(5, 5) != null) {
-            if (getTabuleiro().getPeca(5, 5).getTipo() == PEAO) {
-                condicao1 = true;
-            }
-        }
-
-        boolean condicao2 = false;
-        if (getTabuleiro().getPeca(4, 5) != null) {
-            if (getTabuleiro().getPeca(4, 5).getTipo() == PEAO) {
-                condicao2 = true;
-            }
-        }
-
-        if ((condicao0) && (condicao1 || condicao2)) {
-            Movimento m = new Movimento("d8", "h4");
-            if (getTabuleiro().isMovimentoPossivel(m)) {
-                return m;
-            }
-        }
-        return null;
+    private static final class TempoEsgotadoException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
     }
 }
